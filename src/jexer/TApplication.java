@@ -1197,6 +1197,11 @@ public class TApplication implements Runnable {
      * @param window the window to remove
      */
     public final void closeWindow(final TWindow window) {
+    	// Only allow to close a non-closable window when exiting the application
+    	if (!quit && window.isUnclosable()) {
+    		return;
+    	}
+    	
         synchronized (windows) {
             int z = window.getZ();
             window.setZ(-1);
@@ -1358,8 +1363,8 @@ public class TApplication implements Runnable {
         if (activeMenu != null) {
             return;
         }
-        while (windows.size() > 0) {
-            closeWindow(windows.get(0));
+        for (TWindow window : new ArrayList<TWindow>(windows)) {
+            closeWindow(window);
         }
     }
 
