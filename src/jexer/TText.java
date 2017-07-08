@@ -23,20 +23,22 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
- * @author Kevin Lamonte [kevin.lamonte@gmail.com]
- * @version 1
+ * This code is heavily based upon the original implementation of TText.java
+ * by Kevin Lamonte [kevin.lamonte@gmail.com], version 1.
+ * 
+ * @author niki
+ * @version 1-niki
  */
 package jexer;
 
 import static jexer.TKeypress.kbDown;
 import static jexer.TKeypress.kbEnd;
 import static jexer.TKeypress.kbHome;
-import static jexer.TKeypress.kbLeft;
 import static jexer.TKeypress.kbPgDn;
 import static jexer.TKeypress.kbPgUp;
-import static jexer.TKeypress.kbRight;
 import static jexer.TKeypress.kbUp;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -53,12 +55,12 @@ public final class TText extends TWidget {
     /**
      * Text to display.
      */
-    private String text;
+    private List<String> text;
 
     /**
      * Text converted to lines.
      */
-    private List<String> lines;
+    private List<String> wrappedLines;
 
     /**
      * Text color.
@@ -71,11 +73,6 @@ public final class TText extends TWidget {
     private TVScroller vScroller;
 
     /**
-     * Horizontal scrollbar.
-     */
-    private THScroller hScroller;
-
-    /**
      * Maximum width of a single line.
      */
     private int maxLineWidth;
@@ -86,18 +83,30 @@ public final class TText extends TWidget {
     private int lineSpacing = 1;
 
     /**
-     * Convenience method used by TWindowLoggerOutput.
-     *
-     * @param line new line to add
+     * Add a paragraph to this {@link TText}, but does not reflow.
+     * 
+     * @param paragraph
+     *            the new paragrapgh
      */
-    public void addLine(final String line) {
-        if (text.length() == 0) {
-            text = line;
-        } else {
-            text += "\n\n";
-            text += line;
+    public void addLine(final String paragraph) {
+        text.add(paragraph);
+    }
+    
+    /**
+     * Set the text of this widget, but does not reflow.
+     * <p>
+     * Note that the paragraphs in this text are supposed to
+     * be separated by 2 newlines (\n\n).
+     * 
+     * @param text
+     *            the full text that will replace the current one
+     *            with "\n\n"-separated paragraphs
+     */
+    public void setText(final String text) {
+        this.text.clear();
+        for (String paragraph : text.split("\n\n")) {
+            this.text.add(paragraph);
         }
-        reflow();
     }
 
     /**
@@ -105,89 +114,83 @@ public final class TText extends TWidget {
      */
     private void computeBounds() {
         maxLineWidth = 0;
-        for (String line : lines) {
+        for (String line : wrappedLines) {
             if (line.length() > maxLineWidth) {
                 maxLineWidth = line.length();
             }
         }
 
-        vScroller.setBottomValue((lines.size() - getHeight()) + 1);
+        vScroller.setBottomValue((wrappedLines.size() - getHeight()) + 1);
         if (vScroller.getBottomValue() < 0) {
             vScroller.setBottomValue(0);
         }
         if (vScroller.getValue() > vScroller.getBottomValue()) {
             vScroller.setValue(vScroller.getBottomValue());
         }
-
-        hScroller.setRightValue((maxLineWidth - getWidth()) + 1);
-        if (hScroller.getRightValue() < 0) {
-            hScroller.setRightValue(0);
-        }
-        if (hScroller.getValue() > hScroller.getRightValue()) {
-            hScroller.setValue(hScroller.getRightValue());
-        }
     }
 
     /**
-     * Insert newlines into a string to wrap it to a maximum column. Terminate
-     * the final string with a newline. Note that interior newlines are
-     * converted to spaces.
-     *
-     * @param str the string
-     * @param n the maximum number of characters in a line
-     * @return the wrapped string
+     * Add a paragrah to the flow by wrapping it in lines.
+     * 
+     * @param paragraph
+     *            the paragraph to add
      */
-    private String wrap(final String str, final int n) {
-        assert (n > 0);
+    private void wrap(String paragraph) {
+        int max = getWidth() - 1; // -1 for the VScroll
 
-        StringBuilder sb = new StringBuilder();
-        StringBuilder word = new StringBuilder();
-        int col = 0;
-        for (int i = 0; i < str.length(); i++) {
-            char ch = str.charAt(i);
-            if (ch == '\n') {
-                ch = ' ';
-            }
-            if (ch == ' ') {
-                sb.append(word.toString());
-                sb.append(ch);
-                if (word.length() >= (n - 1)) {
-                    sb.append('\n');
-                    col = 0;
+        if (max > 0) {
+            for (String line : paragraph.split("\n")) {
+                if (line.length() < max) {
+                    wrappedLines.add(line);
+                } else {
+                    String part = line;
+                    while (!part.isEmpty()) {
+                        int stop = Math.min(part.length(), max);
+
+                        String dash = "";
+                        if (part.length() > max) {
+                            // move stop backward if better visually
+                            int i = stop - 1;
+                            for (; i > 0; i--) {
+                                char car = part.charAt(i);
+                                // TODO: better method to list punctuation?
+                                if (car == ' ' || car == ',' || car == '.'
+                                        || car == ',' || car == '?'
+                                        || car == '!' || car == '|'
+                                        || car == '-' || car == '='
+                                        || car == ';' || car == ':') {
+                                    stop = i + 1;
+                                    break;
+                                }
+                            }
+
+                            if (i <= 0) {
+                                if (stop > 1) {
+                                    stop--;
+                                    dash = "-";
+                                }
+                            }
+                        }
+
+                        wrappedLines.add(part.substring(0, stop) + dash);
+                        part = part.substring(stop).trim();
+                    }
                 }
-                word = new StringBuilder();
-            } else {
-                word.append(ch);
             }
 
-            col++;
-            if (col >= (n - 1)) {
-                sb.append('\n');
-                col = 0;
+            for (int i = 0; i < lineSpacing; i++) {
+                wrappedLines.add("");
             }
         }
-        sb.append(word.toString());
-        sb.append('\n');
-        return sb.toString();
     }
 
     /**
      * Resize text and scrollbars for a new width/height.
      */
     public void reflow() {
-        // Reset the lines
-        lines.clear();
-
-        // Break up text into paragraphs
-        String[] paragraphs = text.split("\n\n");
-        for (String p : paragraphs) {
-            String paragraph = wrap(p, getWidth() - 1);
-            for (String line : paragraph.split("\n")) {
-                lines.add(line);
-            }
-            for (int i = 0; i < lineSpacing; i++) {
-                lines.add("");
-            }
+        this.wrappedLines.clear();
+        for (String paragraph : text) {
+            wrap(paragraph);
         }
 
         // Start at the top
@@ -201,18 +204,21 @@ public final class TText extends TWidget {
         }
         vScroller.setBigChange(getHeight() - 1);
 
-        // Start at the left
-        if (hScroller == null) {
-            hScroller = new THScroller(this, 0, getHeight() - 1, getWidth() - 1);
-            hScroller.setLeftValue(0);
-            hScroller.setValue(0);
-        } else {
-            hScroller.setY(getHeight() - 1);
-            hScroller.setWidth(getWidth() - 1);
-        }
-        hScroller.setBigChange(getWidth() - 1);
-
         computeBounds();
+    }
+    
+    /**
+     * Go to the top edge of the scroller.
+     */
+    public void toTop() {
+        vScroller.toTop();
+    }
+
+    /**
+     * Go to the bottom edge of the scroller.
+     */
+    public void toBottom() {
+        vScroller.toBottom();
     }
 
     /**
@@ -250,11 +256,12 @@ public final class TText extends TWidget {
         // Set parent and window
         super(parent, x, y, width, height);
 
-        this.text = text;
         this.colorKey = colorKey;
 
-        lines = new LinkedList<String>();
+        this.text = new ArrayList<String>();
+        this.wrappedLines = new LinkedList<String>();
 
+        setText(text);
         reflow();
     }
 
@@ -268,13 +275,8 @@ public final class TText extends TWidget {
 
         int begin = vScroller.getValue();
         int topY = 0;
-        for (int i = begin; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (hScroller.getValue() < line.length()) {
-                line = line.substring(hScroller.getValue());
-            } else {
-                line = "";
-            }
+        for (int i = begin; i < wrappedLines.size(); i++) {
+            String line = wrappedLines.get(i);
             String formatString = "%-" + Integer.toString(getWidth() - 1) + "s";
             getScreen().putStringXY(0, topY, String.format(formatString, line),
                     color);
@@ -319,11 +321,7 @@ public final class TText extends TWidget {
      */
     @Override
     public void onKeypress(final TKeypressEvent keypress) {
-        if (keypress.equals(kbLeft)) {
-            hScroller.decrement();
-        } else if (keypress.equals(kbRight)) {
-            hScroller.increment();
-        } else if (keypress.equals(kbUp)) {
+        if (keypress.equals(kbUp)) {
             vScroller.decrement();
         } else if (keypress.equals(kbDown)) {
             vScroller.increment();
@@ -340,5 +338,4 @@ public final class TText extends TWidget {
             super.onKeypress(keypress);
         }
     }
-
 }
