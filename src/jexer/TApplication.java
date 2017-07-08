@@ -28,6 +28,7 @@
  */
 package jexer;
 
+import java.awt.GraphicsEnvironment;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -546,15 +547,44 @@ public class TApplication implements Runnable {
 
     /**
      * Public constructor.
+     * <p>
+     * Will use the "best" {@link BackendType} it can assume:
+     * <ul>
+     * <li>SWING if the system property <tt>jexer.Swing</tt> is "true"</li>
+     * <li>SWING on MS-Windows</li>
+     * <li>SWING if no console can be found</li>
+     * <li>XTERM in all the other cases</li>
+     * </ul>
+     *
+     * @throws UnsupportedEncodingException if an exception is thrown when
+     * creating the InputStreamReader
+     */
+    public TApplication() throws UnsupportedEncodingException {
+    	this((BackendType)null);
+    }
+    
+    /**
+     * Public constructor.
      *
      * @param backendType BackendType.XTERM, BackendType.ECMA48 or
      * BackendType.SWING
      * @throws UnsupportedEncodingException if an exception is thrown when
      * creating the InputStreamReader
      */
-    public TApplication(final BackendType backendType)
+    public TApplication(BackendType backendType)
         throws UnsupportedEncodingException {
 
+    	if (backendType == null) {
+    		boolean isMsWindows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
+    		boolean forceSwing = System.getProperty("jexer.Swing", "false").equals("true");
+    		boolean noConsole = System.console() == null;
+	        if (isMsWindows || forceSwing || noConsole) {
+	        	backendType = BackendType.SWING;
+	        } else {
+	        	backendType = BackendType.XTERM;
+	        }
+    	}
+    	
         switch (backendType) {
         case SWING:
             backend = new SwingBackend(this);
